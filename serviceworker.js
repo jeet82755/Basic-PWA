@@ -1,65 +1,63 @@
-const staticFiles = [
+
+const staticAssets = [
     './',
     './style.css',
-    './app.js',
-    './index.html'
+    './app.js'
 ];
 
-// On installing the app, first time, cache all the staticFiles =>
-self.addEventListener("install", (e) => {
-    console.log("[Service Worker] Installed");
-    // wait untill event is complete =>
-    e.waitUntil(
-        caches.open("staticCache").then((cache) => {
-            console.log("Caching static files")
-            cache.addAll(staticFiles);
-        })
-    )
-})
+var mode;
 
-self.addEventListener('activate', function(e) {
-    console.log('[ServiceWorker] Activate');
-    e.waitUntil(
-      caches.keys().then(function(keyList) {
-        return Promise.all(keyList.map(function(key) {
-          if (key !== "staticCache" && key != "dynamicCache") {
-            console.log('[ServiceWorker] Removing old cache', key);
-            return caches.delete(key);
-          }
-        }));
-      })
-    );
-    return self.clients.claim();
-  });
+self.addEventListener('install', async event => {
+    const cache = await caches.open('static-def');
+    cache.addAll(staticAssets);
+});
 
-// On fetching some data from app =>
-self.addEventListener("fetch", (e) => {
-    console.log("[Service Worker] Fetch", e.request.url);
-    var dictUrl = "https://dictionaryapi.com/api/v3/references/learners/json/";
-
-    // If >-1, ie. the URL is present in the request, ie. request successful and WE ARE ONLINE =>
-    if(e.request.url.indexOf(dictUrl) > -1){
-        e.respondWith(
-            // open dynamicCache =>
-            caches.open("dynamicCache").then((cache) => {
-                // fetch data from URL =>
-                return fetch(e.request).then((res) => {
-                    // cache the data fetched =>
-                    cache.put(e.request.url, res.clone());
-                    // return the data =>
-                    return res;
-                })
-            })
-        )
-    }
-    // ELSE, WE ARE OFFLINE, fetch data from cache, or try to fetch it.
+self.addEventListener('fetch', event => {
+    const {request} = event;
+    const url = new URL(request.url);
+    if(mode==false)
+    event.respondWith(cacheData(request));
     else{
-        e.respondWith(
-            // Search cache for a match =>
-            caches.match(e.request).then((res) => {
-                // Return matched result or fetch =>
-                return res || fetch(e.request);
-            })
-        )
+        if(url.origin === location.origin) {
+            event.respondWith(cacheData(request));
+        } else {
+            event.respondWith(networkFirst(request));
+        }
     }
-})
+
+});
+
+self.addEventListener('message', function(event){
+    if(event.data=="offline")
+    mode=false
+    else
+    mode=true
+    console.log("message: "+mode);
+});
+
+self.addEventListener('notificationclick', function(event){
+    var notification = event.notification;
+    var primaryKey = notification.data.primaryKey;
+    var action = event.action;
+    notification.close();
+});
+
+async function cacheData(request) 
+{
+    const cachedResponse = await caches.match(request);
+    return cachedResponse || fetch(request);
+}
+
+async function networkFirst(request) 
+{
+    const cache = await caches.open('dynamic-def');
+
+    try {
+        const response = await fetch(request);
+        cache.put(request, response.clone());
+        return response;
+    } catch (error){
+        return await cache.match(request);
+    }
+
+}
