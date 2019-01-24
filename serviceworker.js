@@ -17,6 +17,21 @@ self.addEventListener("install", (e) => {
     )
 })
 
+self.addEventListener('activate', function(e) {
+    console.log('[ServiceWorker] Activate');
+    e.waitUntil(
+      caches.keys().then(function(keyList) {
+        return Promise.all(keyList.map(function(key) {
+          if (key !== "staticCache" && key != "dynamicCache") {
+            console.log('[ServiceWorker] Removing old cache', key);
+            return caches.delete(key);
+          }
+        }));
+      })
+    );
+    return self.clients.claim();
+  });
+
 // On fetching some data from app =>
 self.addEventListener("fetch", (e) => {
     console.log("[Service Worker] Fetch", e.request.url);
